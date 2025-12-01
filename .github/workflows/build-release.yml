@@ -12,6 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout repository
@@ -54,21 +56,29 @@ jobs:
           
           # Find and copy the IDEA plugin zip
           if [ -d "jetbrains_plugin/build/distributions" ]; then
-            cp jetbrains_plugin/build/distributions/*.zip release/ 2>/dev/null || true
+            # Check if any zip files exist before copying
+            zip_files=$(find jetbrains_plugin/build/distributions -maxdepth 1 -name "*.zip" -type f)
+            if [ -n "$zip_files" ]; then
+              echo "Found build artifacts:"
+              echo "$zip_files"
+              cp jetbrains_plugin/build/distributions/*.zip release/
+            else
+              echo "No zip files found in jetbrains_plugin/build/distributions"
+            fi
           fi
           
-          # Create a combined release archive if multiple artifacts exist
-          if [ "$(ls -A release 2>/dev/null)" ]; then
+          # Check if we have zip files to package
+          zip_count=$(find release -maxdepth 1 -name "*.zip" -type f | wc -l)
+          if [ "$zip_count" -gt 0 ]; then
             cd release
-            # If there's only one zip, use it directly; otherwise create a combined archive
-            zip_count=$(ls *.zip 2>/dev/null | wc -l)
             if [ "$zip_count" -eq 1 ]; then
               # Rename single zip to release zip
               mv *.zip RunVSAgent-release.zip
             else
-              # Create combined archive
-              zip -r RunVSAgent-release.zip .
+              # Create combined archive from multiple zips
+              zip -r RunVSAgent-release.zip *.zip
             fi
+            echo "Created release package: RunVSAgent-release.zip"
             cd ..
           else
             echo "No build artifacts found to package"
