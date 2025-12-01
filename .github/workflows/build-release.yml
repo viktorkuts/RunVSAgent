@@ -1,0 +1,105 @@
+name: Build Release
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: extension_host/package-lock.json
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxkbfile-dev pkg-config build-essential
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh scripts/lib/*.sh
+
+      - name: Run setup
+        run: ./scripts/setup.sh --verbose
+
+      - name: Build project
+        run: ./scripts/build.sh --mode release --verbose
+
+      - name: Create release zip
+        run: |
+          # Create a release directory
+          mkdir -p release
+          
+          # Find and copy the IDEA plugin zip
+          if [ -d "jetbrains_plugin/build/distributions" ]; then
+            # Check if any zip files exist before copying
+            zip_files=$(find jetbrains_plugin/build/distributions -maxdepth 1 -name "*.zip" -type f)
+            if [ -n "$zip_files" ]; then
+              echo "Found build artifacts:"
+              echo "$zip_files"
+              cp jetbrains_plugin/build/distributions/*.zip release/
+            else
+              echo "No zip files found in jetbrains_plugin/build/distributions"
+            fi
+          fi
+          
+          # Check if we have zip files to package
+          zip_count=$(find release -maxdepth 1 -name "*.zip" -type f | wc -l)
+          if [ "$zip_count" -gt 0 ]; then
+            cd release
+            if [ "$zip_count" -eq 1 ]; then
+              # Rename single zip to release zip
+              mv *.zip RunVSAgent-release.zip
+            else
+              # Create combined archive from multiple zips
+              zip -r RunVSAgent-release.zip *.zip
+            fi
+            echo "Created release package: RunVSAgent-release.zip"
+            cd ..
+          else
+            echo "No build artifacts found to package"
+            exit 1
+          fi
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunVSAgent-release
+          path: release/RunVSAgent-release.zip
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/RunVSAgent-release.zip
+          generate_release_notes: true
