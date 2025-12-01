@@ -106,6 +106,7 @@ class MainThreadWindow(val project: Project) : MainThreadWindowShape {
                     Desktop.getDesktop().browse(actualUri)
                     true
                 } else {
+                    logger.warn(actualUri)
                     logger.warn("System does not support opening URI")
                     false
                 }
